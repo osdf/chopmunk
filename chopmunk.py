@@ -3,6 +3,7 @@
 from datetime import datetime
 import json
 import uuid
+import time
 
 
 def coroutine(f):
@@ -78,7 +79,7 @@ def file_sink(filename, append=False, suffix='\n'):
     If `append` is True, the file is opened for appending.
     Each value written to the files is followed by `suffix`."""
     mode = 'a' if append else 'w'
-    with open(filename, mode) as f:
+    with open(filename, mode, 0) as f:
         while True:
             info = (yield)
             f.write(str(info) + suffix)
@@ -95,12 +96,15 @@ def filelike_sink(file_like_object, suffix='\n'):
 
 
 @coroutine
-def timify(consumer):
+def timify(consumer, tag="datetime"):
     """Returnt a consumer that adds a field 'datetime' to the received values
     and passes them on."""
     while True:
         info = (yield)
-        info['datetime'] = datetime.now().isoformat()
+        if tag is "datetime":
+            info['datetime'] = datetime.now().isoformat()
+        else:
+            info['timestamp'] = time.time()
         consumer.send(info)
 
 
@@ -112,7 +116,7 @@ def taggify(consumer, tags):
     while True:
         info = (yield)
         info['tags'] = info.get('tags', [])
-        info['tags'] += tags
+        info['tags'] += aslist(tags)
         consumer.send(info)
 
 
@@ -153,6 +157,7 @@ def include_tags_only(consumer, tags):
 def keep(consumer, keys):
     """Return consumer that only keeps a subset of the dictionary given by
     `keys`."""
+    keys = aslist(keys)
     while True:
         info = (yield)
         new_info = dict((k, v) for k, v in info.items() if k in keys)
@@ -163,6 +168,7 @@ def keep(consumer, keys):
 def dontkeep(consumer, keys):
     """Return consumer that throws away a subset of the dictionary given by
     `keys`."""
+    keys = aslist(keys)
     while True:
         info = (yield)
         new_info = dict((k, v) for k, v in info.items() if k not in keys)
@@ -195,3 +201,30 @@ def add_keyvalue(consumer, key, value):
         info = (yield).copy()
         info[key] = value
         consumer.send(info)
+
+
+@coroutine
+def exclude(consumer, keys):
+    """Return a consumer that delivers only if
+    keys are not in a value.
+    """
+    keys = aslist(keys)
+    while True:
+        info = (yield)
+        if all(i not in info for i in keys):
+            consumer.send(info)
+        else:
+            continue
+
+
+@coroutine
+def include(consumer, keys):
+    """
+    """
+    keys = aslist(keys)
+    while True:
+        info = (yield)
+        if all(i in info for i in keys):
+            consumer.send(info)
+        else:
+            continue
